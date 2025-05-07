@@ -1,0 +1,370 @@
+INCLUDE Irvine32.inc
+
+.data
+wordList        byte "apple",0,"grape",0,"peach",0,"melon",0,"mangoon",0
+wordPointers    dword OFFSET wordList, OFFSET wordList+6, OFFSET wordList+12, OFFSET wordList+18, OFFSET wordList+24
+
+secretWord      byte 20 DUP(?)
+wordLength      dword ?
+displayWord     byte 20 DUP(?)
+
+guessLimit      dword 6
+guessCount      dword 0
+correctGuesses  dword 0
+guess           byte ?
+alreadyGuessed  byte 26 DUP(0)
+guessedCount    dword 0
+
+promptMsg       byte "Guess a letter: ", 0
+guessedMsg      byte "Guessed letters are: ", 0
+
+winMsg          byte "Congratulations! You guessed the word.", 0
+loseMsg         byte "Game Over! The word was: ", 0
+
+messageTitle    byte "Hangman Result", 0
+askReplayMsg    byte "Do you want to play again?", 0
+
+gallowsTable dword offset gallows0, offset gallows1, offset gallows2, offset gallows3, offset gallows4, offset gallows5, offset gallows6
+
+gallows0 byte \
+    "+------+",13,10,\
+    "|     |",13,10,\
+    "|",13,10,\
+    "|",13,10,\
+    "+----+ +",13,10,\
+    "|       |",13,10,\
+    "+----+ +",13,10,0
+
+gallows1 byte \
+    "+------+",13,10,\
+    "|     |",13,10,\
+    "|     O",13,10,\
+    "|",13,10,\
+    "+----+ +",13,10,\
+    "|       |",13,10,\
+    "+----+ +",13,10,0
+
+gallows2 byte \
+    "+------+",13,10,\
+    "|     |",13,10,\
+    "|     O",13,10,\
+    "|     |",13,10,\
+    "+----+ +",13,10,\
+    "|       |",13,10,\
+    "+----+ +",13,10,0
+
+gallows3 byte \
+    "+------+",13,10,\
+    "|     |",13,10,\
+    "|     O",13,10,\
+    "|    /|",13,10,\
+    "+----+ +",13,10,\
+    "|       |",13,10,\
+    "+----+ +",13,10,0
+
+gallows4 byte \
+    "+------+",13,10,\
+    "|     |",13,10,\
+    "|     O",13,10,\
+    "|    /|\",13,10,\
+    "+----+ +",13,10,\
+    "|       |",13,10,\
+    "+----+ +",13,10,0
+
+gallows5 byte \
+    "+------+",13,10,\
+    "|     |",13,10,\
+    "|     O",13,10,\
+    "|    /|\",13,10,\
+    "|    /",13,10,\
+    "+----+ +",13,10,\
+    "|       |",13,10,\
+    "+----+ +",13,10,0
+
+gallows6 byte \
+    "+------+",13,10,\
+    "|     |",13,10,\
+    "|     O",13,10,\
+    "|    /|\",13,10,\
+    "|    / \",13,10,\
+    "+----+ +",13,10,\
+    "|       |",13,10,\
+    "+----+ +",13,10,0
+
+bannerline1 byte \
+" ----------------------------------------------------",13,10,0
+
+banner byte \
+"  _    _                                         ",13,10,\
+" | |  | |                                        ",13,10,\
+" | |__| | __ _ _ __   __ _ _ __ ___   __ _ _ __ ",13,10,\
+" |  __  |/ _` | '_ \\ / _` | '_ ` _ \\ / _` | '_ \\",13,10,\
+" | |  | | (_| | | | | (_| | | | | | | (_| | | | |",13,10,\
+" |_|  |_|\\__,_|_| |_|\\__, |_| |_| |_|\\__,_|_| |_|",13,10,\
+"                     __/ |                      ",13,10,\
+"                    |___/                       ",13,10,\
+0
+bannerline2 byte \
+" ----------------------------------------------------",13,10,0
+bannerLine3 BYTE "  === Welcome to the Classic Hangman Game! === ",13,10,0
+bannerLine4 BYTE "        Guess the word or face the gallows!    ",13,10,0
+
+.code
+main PROC
+    mov eax, red + (black * 16)
+    call settextcolor
+    mov edx, offset bannerline1
+    call WriteString
+
+    mov eax, yellow
+    call settextcolor
+    mov edx, offset banner
+    call WriteString
+
+    mov eax, red
+    call settextcolor
+    mov edx, offset bannerline2
+    call WriteString
+
+    mov eax, green 
+    call settextcolor
+    mov edx, offset bannerline3
+    call WriteString
+
+    mov edx, offset bannerline4
+    call WriteString
+
+    mov eax, 3000   
+    call Delay
+
+    call Clrscr      
+
+    mov eax, white
+    call settextcolor
+
+startOver:
+    call InitGame
+
+gameLoop:
+    call clrscr
+    call drawGallows
+    call ShowDisplayWord
+    call printGuessedLetters
+
+    mov edx, OFFSET promptMsg
+    call WriteString
+    call ReadChar
+    call Crlf
+
+    call toLower
+    mov guess, al
+
+    ; check already guessed
+    mov ecx, guessedCount
+    mov esi, OFFSET alreadyGuessed
+    cld
+checkRepeat:
+    cmp ecx, 0
+    je storeGuess
+    mov al, [esi]
+    cmp al, guess
+    je gameLoop
+    inc esi
+    dec ecx
+    jmp checkRepeat
+
+storeGuess:
+    ; store guess
+    mov esi, OFFSET alreadyGuessed
+    add esi, guessedCount
+    mov al, guess
+    mov [esi], al
+    inc guessedCount
+
+    ; search in word
+    mov ecx, wordLength
+    mov esi, OFFSET secretWord
+    mov edi, OFFSET displayWord
+    xor ebx, ebx
+    xor edx, edx ; match count
+
+checkLetters:
+    mov al, [esi + ebx]
+    cmp al, guess
+    jne nextChar
+   
+    mov al, [edi + ebx]
+    cmp al, guess
+
+    je nextChar
+    
+    mov al, guess
+    mov [edi + ebx], al
+    inc edx
+nextChar:
+    inc ebx
+    loop checkLetters
+
+    add correctGuesses, edx
+    cmp edx, 0
+    jne checkWin
+    inc guessCount
+
+checkWin:
+    mov eax, correctGuesses
+    cmp eax, wordLength
+    je Win
+
+    mov eax, guessCount
+    cmp eax, guessLimit
+
+    jge Lose
+
+    jmp gameLoop
+
+Win:
+    call clrscr
+    call drawGallows
+    call ShowDisplayWord
+    call printGuessedLetters
+    mov edx, OFFSET winMsg
+    call MessageBoxDisplay
+    call AskReplay
+    cmp eax, IDYES
+    je startOver
+    exit
+
+Lose:
+    call clrscr
+    call drawGallows
+    mov edx, OFFSET loseMsg
+    call WriteString
+    mov edx, OFFSET secretWord
+    call WriteString
+    call Crlf
+    call MessageBoxDisplay
+    call AskReplay
+    cmp eax, IDYES
+    je startOver
+    exit
+
+main ENDP
+
+InitGame PROC
+    ; reset counters
+    mov guessCount, 0
+    mov correctGuesses, 0
+    mov guessedCount, 0
+    mov edi, OFFSET alreadyGuessed
+    mov ecx, 26
+    mov al, 0
+    rep stosb
+
+    ; Random word index 0-4
+    call Randomize
+    mov eax, 5
+    call RandomRange
+    mov ebx, eax
+    mov esi, wordPointers[ebx*4]
+    mov edi, OFFSET secretWord
+
+copyWord:
+    mov al, [esi]
+    mov [edi], al
+    cmp al, 0
+    je afterCopy
+    inc esi
+    inc edi
+    jmp copyWord
+afterCopy:
+
+    ; Calculate length
+    mov esi, OFFSET secretWord
+    xor ecx, ecx
+lenLoop:
+    cmp BYTE PTR [esi+ecx], 0
+    je setLength
+    inc ecx
+    jmp lenLoop
+setLength:
+    mov wordLength, ecx
+
+    ; initialize displayWord
+    mov ecx, wordLength
+    mov edi, OFFSET displayWord
+fillDisplay:
+    mov BYTE PTR [edi], '-'
+    inc edi
+    loop fillDisplay
+    mov BYTE PTR [edi], 0
+    ret
+InitGame ENDP
+
+drawGallows PROC
+    mov eax, guessCount
+    cmp eax, 6
+    jbe gallows_ok
+    mov eax, 6
+gallows_ok:
+    mov esi, OFFSET gallowsTable
+    mov edx, [esi + eax*4]
+    call WriteString
+    ret
+drawGallows ENDP
+
+ShowDisplayWord PROC
+    mov edx, OFFSET displayWord
+    call WriteString
+    call Crlf
+    ret
+ShowDisplayWord ENDP
+
+printGuessedLetters PROC
+    mov edx, OFFSET guessedMsg
+    call WriteString
+    mov ecx, guessedCount
+    mov esi, OFFSET alreadyGuessed
+printLoop:
+    cmp ecx, 0
+    je printDone
+    mov al, [esi]
+    call WriteChar
+    mov al, ','
+    call WriteChar
+    inc esi
+    dec ecx
+    jmp printLoop
+printDone:
+    call Crlf
+    ret
+printGuessedLetters ENDP
+
+toLower PROC
+    cmp al, 'A'
+    jb skip
+    cmp al, 'Z'
+    ja skip
+    add al, 32
+skip:
+    ret
+toLower ENDP
+
+MessageBoxDisplay PROC
+    push 0
+    push OFFSET messageTitle
+    push edx
+    push 0
+    call MessageBoxA
+    ret
+MessageBoxDisplay ENDP
+
+AskReplay PROC
+    push MB_YESNO
+    push OFFSET messageTitle
+    push OFFSET askReplayMsg
+    push 0
+    call MessageBoxA
+    ret
+AskReplay ENDP
+
+END main
